@@ -311,7 +311,7 @@ descrambler_descramble ( service_t *t,
     dr->dr_last_descramble = dispatch_clock;
     return 1;
 idle:
-    td->td_keystate = DS_IDLE;
+    td->td_keystate = DS_FORBIDDEN;
     failed++;
     continue;
   }
