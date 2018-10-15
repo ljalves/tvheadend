@@ -118,6 +118,7 @@ htsmsg_field_add(htsmsg_t *msg, const char *name, int type, int flags, size_t es
   htsmsg_field_t *f;
   
   nsize = name ? strlen(name) + 1 : 1;
+  nsize = (nsize + sizeof(int) - 1) & ~(sizeof(int) - 1);
   f = malloc(sizeof(htsmsg_field_t) + nsize + esize);
   if(f == NULL)
     return NULL;

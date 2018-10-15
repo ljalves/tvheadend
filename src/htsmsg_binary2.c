@@ -114,6 +114,7 @@ htsmsg_binary2_des0(htsmsg_t *msg, const uint8_t *buf, uint32_t len)
       return -1;
 
     nlen = namelen ? namelen + 1 : 1;
+    nlen = (nlen + sizeof(int) - 1) & ~(sizeof(int) - 1);
     tlen = sizeof(htsmsg_field_t) + nlen;
     if (type == HMF_STR) {
       tlen += datalen + 1;
