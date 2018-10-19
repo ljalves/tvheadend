@@ -756,6 +756,19 @@ http_channel_list_playlist(http_connection_t *hc, int pltype)
   char *profile, *hostpath;
   const char *name, *blank, *sort, *lang;
 
+  const char *username = NULL, *password = NULL, *str;
+  int stream2 = 0;
+  if ((str = http_arg_get(&hc->hc_req_args, "username")))
+    username = str;
+  if ((str = http_arg_get(&hc->hc_req_args, "password")))
+    password = str;
+  if (username != NULL && password != NULL) {
+    hc->hc_username = (char*) username;
+    hc->hc_password = (char*) password;
+    hc->hc_access = access_get_by_username(username);
+    stream2 = 1;
+  }
+
   if(hc->hc_access == NULL ||
      access_verify2(hc->hc_access, ACCESS_STREAMING))
     return HTTP_STATUS_UNAUTHORIZED;
@@ -777,7 +790,10 @@ http_channel_list_playlist(http_connection_t *hc, int pltype)
       continue;
 
     name = channel_get_name(ch, blank);
-    snprintf(buf, sizeof(buf), "/stream/channelid/%d", channel_get_id(ch));
+    if (stream2)
+      snprintf(buf, sizeof(buf), "/stream2/%s/%s/channelid/%d", username, password, channel_get_id(ch));
+    else
+      snprintf(buf, sizeof(buf), "/stream/channelid/%d", channel_get_id(ch));
 
     if (pltype == PLAYLIST_M3U) {
       http_m3u_playlist_add(hq, hostpath, buf, profile, name,
@@ -1267,6 +1283,17 @@ http_stream(http_connection_t *hc, const char *remain, void *opaque)
   if ((str = http_arg_get(&hc->hc_req_args, "weight")))
     weight = atoi(str);
 
+
+  const char *username = NULL, *password = NULL;
+  if ((str = http_arg_get(&hc->hc_req_args, "username")))
+    username = str;
+  if ((str = http_arg_get(&hc->hc_req_args, "password")))
+    password = str;
+  if (username != NULL && password != NULL) {
+    hc->hc_username = (char*) username;
+	hc->hc_password = (char*) password;
+  }
+
   scopedgloballock();
 
   if(!strcmp(components[0], "channelid")) {
@@ -1283,6 +1310,66 @@ http_stream(http_connection_t *hc, const char *remain, void *opaque)
   } else if(!strcmp(components[0], "mux")) {
     // TODO: do we want to be able to force starting a particular instance
     mm      = mpegts_mux_find(components[1]);
+#endif
+  }
+
+  if(ch != NULL) {
+    return http_stream_channel(hc, ch, weight);
+  } else if(service != NULL) {
+    return http_stream_service(hc, service, weight);
+#if ENABLE_MPEGTS
+  } else if(mm != NULL) {
+    return http_stream_mux(hc, mm, weight);
+#endif
+  } else {
+    return HTTP_STATUS_BAD_REQUEST;
+  }
+}
+
+static int
+http_stream2(http_connection_t *hc, const char *remain, void *opaque)
+{
+  char *components[4];
+  channel_t *ch = NULL;
+  service_t *service = NULL;
+#if ENABLE_MPEGTS
+  mpegts_mux_t *mm = NULL;
+#endif
+  const char *str;
+  int weight = 0;
+
+  hc->hc_keep_alive = 0;
+
+  if(remain == NULL)
+    return HTTP_STATUS_BAD_REQUEST;
+
+  if(http_tokenize((char *)remain, components, 4, '/') != 4)
+    return HTTP_STATUS_BAD_REQUEST;
+
+  http_deescape(components[3]);
+
+  if ((str = http_arg_get(&hc->hc_req_args, "weight")))
+    weight = atoi(str);
+
+  hc->hc_username = (char*) components[0];
+  hc->hc_password = (char*) components[1];
+
+  scopedgloballock();
+
+  if(!strcmp(components[2], "channelid")) {
+    ch = channel_find_by_id(atoi(components[3]));
+  } else if(!strcmp(components[2], "channelnumber")) {
+    ch = channel_find_by_number(components[3]);
+  } else if(!strcmp(components[2], "channelname")) {
+    ch = channel_find_by_name(components[3]);
+  } else if(!strcmp(components[2], "channel")) {
+    ch = channel_find(components[3]);
+  } else if(!strcmp(components[2], "service")) {
+    service = service_find_by_uuid(components[3]);
+#if ENABLE_MPEGTS
+  } else if(!strcmp(components[2], "mux")) {
+    // TODO: do we want to be able to force starting a particular instance
+    mm      = mpegts_mux_find(components[3]);
 #endif
   }
 
@@ -1897,6 +1984,7 @@ webui_init(int xspf)
   http_path_add("/state", NULL, page_statedump, ACCESS_ADMIN);
 
   http_path_add("/stream",  NULL, http_stream,  ACCESS_ANONYMOUS);
+  http_path_add("/stream2",  NULL, http_stream2,  ACCESS_ANONYMOUS);
 
   http_path_add("/imagecache", NULL, page_imagecache, ACCESS_ANONYMOUS);
 
